@@ -1,0 +1,140 @@
+/** API client for the backend. */
+import type {
+  DatasetResponse,
+  DatasetStats,
+  TrainingExample,
+  TrainingConfig,
+  TrainingStatus,
+  TrainingRunHistory,
+  ModelStatus,
+  PredictionResponse,
+  HealthCheck,
+} from './types';
+
+const BASE = '';
+
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, options);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API error ${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+// ─── Health ──────────────────────────────────────────────────────────
+
+export const api = {
+  health: () => request<HealthCheck>('/api/health'),
+
+  // ─── Dataset ───────────────────────────────────────────────────────
+
+  dataset: {
+    list: (skip = 0, limit = 50, split?: string, status?: string) => {
+      const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+      if (split) params.set('split', split);
+      if (status) params.set('status', status);
+      return request<DatasetResponse>(`/api/dataset?${params}`);
+    },
+
+    stats: () => request<DatasetStats>('/api/dataset/stats'),
+
+    get: (id: string) => request<TrainingExample>(`/api/dataset/${id}`),
+
+    upload: (original: File, target?: File) => {
+      const form = new FormData();
+      form.append('original', original);
+      if (target) form.append('target', target);
+      return request<TrainingExample>('/api/dataset/upload', {
+        method: 'POST',
+        body: form,
+      });
+    },
+
+    update: (id: string, data: Partial<TrainingExample>) =>
+      request<TrainingExample>(`/api/dataset/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    setLabel: (id: string, crop: { crop_x: number; crop_y: number; crop_width: number; crop_height: number }) => {
+      const form = new FormData();
+      form.append('crop_x', String(crop.crop_x));
+      form.append('crop_y', String(crop.crop_y));
+      form.append('crop_width', String(crop.crop_width));
+      form.append('crop_height', String(crop.crop_height));
+      return request<TrainingExample>(`/api/dataset/${id}/label`, {
+        method: 'POST',
+        body: form,
+      });
+    },
+
+    delete: (id: string) =>
+      request<{ status: string }>(`/api/dataset/${id}`, { method: 'DELETE' }),
+
+    split: (config?: { train_ratio: number; val_ratio: number; test_ratio: number; seed: number }) =>
+      request<DatasetStats>('/api/dataset/split', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config ?? {}),
+      }),
+  },
+
+  // ─── Training ──────────────────────────────────────────────────────
+
+  training: {
+    start: (config?: Partial<TrainingConfig>) =>
+      request<{ status: string; model_version: string; config: TrainingConfig }>('/api/training/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config ?? {}),
+      }),
+
+    stop: () =>
+      request<{ status: string }>('/api/training/stop', { method: 'POST' }),
+
+    status: () => request<TrainingStatus>('/api/training/status'),
+
+    history: (skip = 0, limit = 20) =>
+      request<TrainingRunHistory[]>(`/api/training/history?skip=${skip}&limit=${limit}`),
+  },
+
+  // ─── Model ────────────────────────────────────────────────────────
+
+  model: {
+    status: () => request<ModelStatus>('/api/model/status'),
+
+    activate: (version: string) =>
+      request<{ status: string }>(`/api/model/activate/${version}`, { method: 'POST' }),
+
+    predict: (image: File) => {
+      const form = new FormData();
+      form.append('image', image);
+      return request<PredictionResponse>('/api/model/predict', {
+        method: 'POST',
+        body: form,
+      });
+    },
+
+    correct: (data: {
+      prediction_id: string;
+      corrected_x: number;
+      corrected_y: number;
+      corrected_width: number;
+      corrected_height: number;
+      add_to_dataset: boolean;
+    }) =>
+      request<{ status: string }>('/api/model/correct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    export: (predictionId: string) =>
+      request<{ status: string; path: string; filename: string }>(
+        `/api/model/export/${predictionId}`,
+        { method: 'POST' }
+      ),
+  },
+};
