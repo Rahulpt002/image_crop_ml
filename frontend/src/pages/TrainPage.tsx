@@ -10,6 +10,8 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Shuffle,
+  AlertCircle,
 } from 'lucide-react';
 import { api } from '../api';
 import type { TrainingConfig, TrainingStatus, DatasetStats, TrainingRunHistory } from '../types';
@@ -28,6 +30,7 @@ export default function TrainPage() {
     loss_function: 'smooth_l1',
   });
   const [loading, setLoading] = useState(false);
+  const [splitLoading, setSplitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
 
@@ -76,6 +79,10 @@ export default function TrainPage() {
     setLoading(true);
     setError(null);
     try {
+      if (stats && stats.train === 0 && stats.labeled > 0) {
+        await api.dataset.split();
+        await loadAll();
+      }
       await api.training.start(config);
       const st = await api.training.status();
       setStatus(st);
@@ -83,6 +90,19 @@ export default function TrainPage() {
       setError(e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSplit = async () => {
+    setSplitLoading(true);
+    setError(null);
+    try {
+      await api.dataset.split();
+      await loadAll();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSplitLoading(false);
     }
   };
 
@@ -95,6 +115,7 @@ export default function TrainPage() {
   };
 
   const isTraining = status?.status === 'training';
+  const canTrain = Boolean(stats && (stats.train > 0 || stats.labeled > 0));
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -118,8 +139,9 @@ export default function TrainPage() {
           ) : (
             <button
               onClick={handleStart}
-              disabled={loading || !stats || stats.train === 0}
+              disabled={loading || !canTrain}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[var(--color-accent-primary)] to-purple-500 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+              title={!canTrain ? 'Add labeled examples in Trainer to enable training' : undefined}
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               Train Model
@@ -127,6 +149,41 @@ export default function TrainPage() {
           )}
         </div>
       </div>
+
+      {/* Dataset status banner */}
+      {stats && stats.labeled === 0 && (
+        <div className="mb-6 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-300">No training data available</p>
+            <p className="text-xs text-amber-200/80 mt-0.5">
+              Please upload training image pairs in the <a href="/trainer" className="underline font-semibold hover:text-white">Trainer</a> tab to train your model.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {stats && stats.train === 0 && stats.labeled > 0 && (
+        <div className="mb-6 p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shuffle className="w-5 h-5 text-blue-400 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-blue-300">{stats.labeled} labeled examples ready to train</p>
+              <p className="text-xs text-blue-200/80 mt-0.5">
+                Dataset splits will automatically be assigned (80% train / 10% val / 10% test) when starting training.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleSplit}
+            disabled={splitLoading}
+            className="px-3.5 py-1.5 rounded-lg bg-blue-500 text-white text-xs font-semibold hover:bg-blue-600 transition-colors flex items-center gap-1.5"
+          >
+            {splitLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shuffle className="w-3.5 h-3.5" />}
+            Split Now
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Configuration */}

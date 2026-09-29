@@ -147,9 +147,22 @@ export default function TestPage() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-[var(--color-text-muted)] mt-2">
-                Model: {prediction.model_version}
-              </p>
+              <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)] mt-2">
+                <span>Model: {prediction.model_version}</span>
+                <span className="font-mono text-[var(--color-accent-secondary)] font-medium">
+                  Output: 150×200 px · 300 DPI
+                </span>
+              </div>
+              {prediction.face_detected ? (
+                <div className="mt-2 pt-2 border-t border-[var(--color-border-subtle)] text-xs text-emerald-400 flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                  Face localized {prediction.face_confidence ? `(${Math.round(prediction.face_confidence * 100)}% conf)` : ''} · 3:4 framing applied
+                </div>
+              ) : (
+                <div className="mt-2 pt-2 border-t border-[var(--color-border-subtle)] text-xs text-[var(--color-text-muted)]">
+                  No face detected · Full CropNet framing applied
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -160,7 +173,7 @@ export default function TestPage() {
             <>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
-                  Predicted Crop — Adjust Manually
+                  Predicted Crop — 3:4 Aspect Ratio Locked
                 </p>
                 <CropEditor
                   imageUrl={preview}
@@ -168,6 +181,17 @@ export default function TestPage() {
                   imageHeight={dims.h}
                   crop={crop}
                   onChange={setCrop}
+                  aspectRatio={0.75}
+                  faceBox={
+                    prediction.face_detected && prediction.face_box_x !== null
+                      ? {
+                          x: prediction.face_box_x!,
+                          y: prediction.face_box_y!,
+                          width: prediction.face_box_width!,
+                          height: prediction.face_box_height!,
+                        }
+                      : null
+                  }
                 />
               </div>
 

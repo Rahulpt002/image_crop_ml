@@ -260,6 +260,15 @@ class PredictionResponse(BaseModel):
     pred_crop_width: Optional[int] = None
     pred_crop_height: Optional[int] = None
 
+    # Face detection info
+    face_detected: bool = False
+    face_box_x: Optional[int] = None
+    face_box_y: Optional[int] = None
+    face_box_width: Optional[int] = None
+    face_box_height: Optional[int] = None
+    face_confidence: Optional[float] = None
+    aspect_ratio: Optional[float] = None
+
     class Config:
         from_attributes = True
 

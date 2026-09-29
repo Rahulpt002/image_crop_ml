@@ -11,7 +11,8 @@ import numpy as np
 from PIL import Image, ExifTags
 
 from backend.config.settings import (
-    UPLOAD_DIR, DATASET_IMAGES_DIR, THUMBNAIL_SIZE, ALLOWED_EXTENSIONS, MAX_IMAGE_SIZE
+    UPLOAD_DIR, DATASET_IMAGES_DIR, THUMBNAIL_SIZE, ALLOWED_EXTENSIONS, MAX_IMAGE_SIZE,
+    PORTRAIT_OUTPUT_WIDTH, PORTRAIT_OUTPUT_HEIGHT, PORTRAIT_OUTPUT_DPI,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,3 +140,49 @@ def copy_to_dataset(
     dest_path = dest_dir / f"{image_type}{ext}"
     shutil.copy2(source_path, dest_path)
     return dest_path
+
+
+def export_portrait_crop(
+    image_path: Path,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    output_path: Path,
+    target_width: int = PORTRAIT_OUTPUT_WIDTH,
+    target_height: int = PORTRAIT_OUTPUT_HEIGHT,
+    dpi: Tuple[int, int] = PORTRAIT_OUTPUT_DPI,
+) -> Path:
+    """
+    Extract crop from original image, resize to target dimensions (150x200),
+    and save with specified DPI metadata (300x300 DPI).
+
+    Args:
+        image_path: Source image path
+        x, y, width, height: Bounding box in absolute source pixels
+        output_path: Destination file path
+        target_width: Final output width (default 150 px)
+        target_height: Final output height (default 200 px)
+        dpi: Metadata resolution tuple (default (300, 300))
+
+    Returns:
+        The output_path
+    """
+    with Image.open(image_path) as img:
+        img = fix_exif_orientation(img)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # Clamp crop coordinates to image bounds
+        img_w, img_h = img.size
+        x1 = max(0, min(x, img_w - 1))
+        y1 = max(0, min(y, img_h - 1))
+        x2 = max(x1 + 1, min(x + width, img_w))
+        y2 = max(y1 + 1, min(y + height, img_h))
+
+        cropped = img.crop((x1, y1, x2, y2))
+        resized = cropped.resize((target_width, target_height), Image.LANCZOS)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        resized.save(output_path, quality=95, dpi=dpi)
+
+    return output_path

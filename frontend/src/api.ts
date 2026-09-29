@@ -141,10 +141,17 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    export: (predictionId: string) =>
-      request<{ status: string; path: string; filename: string }>(
-        `/api/model/export/${predictionId}`,
+    export: (
+      predictionId: string,
+      cropCoords?: { x: number; y: number; width: number; height: number }
+    ) => {
+      const query = cropCoords
+        ? `?crop_x=${cropCoords.x}&crop_y=${cropCoords.y}&crop_width=${cropCoords.width}&crop_height=${cropCoords.height}`
+        : '';
+      return request<{ status: string; path: string; filename: string; width: number; height: number; dpi: number }>(
+        `/api/model/export/${predictionId}${query}`,
         { method: 'POST' }
-      ),
+      );
+    },
   },
 };

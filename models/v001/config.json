@@ -1,0 +1,42 @@
+{
+  "backbone": "mobilenet_v3_small",
+  "image_size": 224,
+  "batch_size": 8,
+  "learning_rate": 0.0001,
+  "epochs": 30,
+  "optimizer": "adamw",
+  "loss_function": "smooth_l1",
+  "device": "mps",
+  "version": "v001",
+  "preprocessing": {
+    "image_size": 224,
+    "resize_mode": "aspect_ratio_preserving_with_padding",
+    "pad_fill": [
+      0,
+      0,
+      0
+    ],
+    "normalization": {
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    },
+    "augmentation_training": {
+      "color_jitter": {
+        "brightness": 0.2,
+        "contrast": 0.2,
+        "saturation": 0.1,
+        "hue": 0.05
+      }
+    },
+    "augmentation_inference": null,
+    "coordinate_system": "normalized_0_1_relative_to_original"
+  }
+}

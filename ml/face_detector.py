@@ -125,17 +125,21 @@ class MediaPipeFaceDetector(FaceDetector):
         return str(model_path)
 
     def detect(self, image: Image.Image) -> List[FaceDetection]:
-        """Detect faces using MediaPipe."""
-        import mediapipe as mp
+        """Detect faces using MediaPipe with graceful fallback to OpenCV."""
+        try:
+            import mediapipe as mp
 
-        detector = self._get_detector()
+            detector = self._get_detector()
 
-        # Convert PIL Image to MediaPipe Image
-        img_array = np.array(image)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_array)
+            # Convert PIL Image to MediaPipe Image
+            img_array = np.array(image)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_array)
 
-        # Run detection
-        result = detector.detect(mp_image)
+            # Run detection
+            result = detector.detect(mp_image)
+        except Exception as e:
+            logger.warning(f"MediaPipe detection failed, falling back to OpenCV Haar: {e}")
+            return OpenCVHaarFaceDetector(min_confidence=self.min_confidence).detect(image)
 
         img_w, img_h = image.size
         detections = []
@@ -193,9 +197,29 @@ class OpenCVHaarFaceDetector(FaceDetector):
         img_array = np.array(image)
         gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
 
-        cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
+        from pathlib import Path
+
+        # Look for bundled XML first, then cv2.data.haarcascades
+        candidate_paths = [
+            Path(__file__).parent.parent / "models" / "haarcascades" / "haarcascade_frontalface_default.xml",
+            Path(getattr(cv2.data, "haarcascades", "")) / "haarcascade_frontalface_default.xml",
+        ]
+
+        xml_path = None
+        for p in candidate_paths:
+            if p.exists():
+                xml_path = str(p)
+                break
+
+        if not xml_path:
+            logger.warning("Haar cascade XML not found, returning empty face detections")
+            return []
+
+        cascade = cv2.CascadeClassifier(xml_path)
+        if cascade.empty():
+            logger.warning(f"Haar cascade XML failed to load from {xml_path}")
+            return []
+
         faces = cascade.detectMultiScale(
             gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
         )

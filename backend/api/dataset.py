@@ -8,7 +8,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from backend.config.settings import UPLOAD_DIR, CROP_CONFIDENCE_THRESHOLD
+from backend.config.settings import (
+    UPLOAD_DIR,
+    CROP_CONFIDENCE_THRESHOLD,
+    PORTRAIT_ASPECT_RATIO,
+    ASPECT_RATIO_TOLERANCE,
+)
 from backend.database.connection import get_db
 from backend.models.db_models import TrainingExample
 from backend.schemas.api_schemas import (
@@ -40,6 +45,25 @@ def _compute_pair_hash(orig_content: bytes, tgt_content: bytes | None) -> str:
     if tgt_content:
         h.update(tgt_content)
     return h.hexdigest()
+
+
+def validate_aspect_ratio(
+    crop_width: int,
+    crop_height: int,
+    target_ar: float = PORTRAIT_ASPECT_RATIO,
+    tolerance: float = ASPECT_RATIO_TOLERANCE,
+) -> tuple[bool, float]:
+    """
+    Validate whether crop aspect ratio matches target ratio within tolerance.
+
+    Returns:
+        (is_valid, actual_ar)
+    """
+    if crop_height <= 0:
+        return False, 0.0
+    actual_ar = crop_width / crop_height
+    is_valid = abs(actual_ar - target_ar) <= (target_ar * tolerance)
+    return is_valid, actual_ar
 
 
 @router.post("/check-hash")
@@ -160,7 +184,18 @@ async def upload_training_pair(
 
             example.confidence = result.confidence
             example.extraction_method = result.method
-            example.status = "labeled" if result.confidence >= CROP_CONFIDENCE_THRESHOLD else "pending"
+
+            # Validate aspect ratio against 3:4 portrait standard
+            is_ar_valid, actual_ar = validate_aspect_ratio(result.width, result.height)
+            if result.confidence >= CROP_CONFIDENCE_THRESHOLD:
+                if is_ar_valid:
+                    example.status = "labeled"
+                    example.notes = None
+                else:
+                    example.status = "pending"
+                    example.notes = f"Invalid aspect ratio: {actual_ar:.3f}. Expected ≈ {PORTRAIT_ASPECT_RATIO:.2f}"
+            else:
+                example.status = "pending"
 
         except Exception as e:
             logger.warning(f"Crop extraction failed: {e}")
@@ -295,6 +330,13 @@ async def set_manual_label(
     example.extraction_method = "manual"
     example.confidence = 1.0
     example.status = "labeled"
+
+    # Validate aspect ratio
+    is_ar_valid, actual_ar = validate_aspect_ratio(crop_width, crop_height)
+    if not is_ar_valid:
+        example.notes = f"Manual label aspect ratio: {actual_ar:.3f} (target {PORTRAIT_ASPECT_RATIO:.2f})"
+    else:
+        example.notes = None
 
     db.commit()
     db.refresh(example)

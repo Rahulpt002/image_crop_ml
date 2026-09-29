@@ -14,6 +14,8 @@ interface Props {
   crop: CropBox;
   onChange: (crop: CropBox) => void;
   readOnly?: boolean;
+  aspectRatio?: number;
+  faceBox?: { x: number; y: number; width: number; height: number } | null;
 }
 
 export default function CropEditor({
@@ -23,6 +25,8 @@ export default function CropEditor({
   crop,
   onChange,
   readOnly = false,
+  aspectRatio,
+  faceBox,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [displaySize, setDisplaySize] = useState({ w: 0, h: 0 });
@@ -87,8 +91,97 @@ export default function CropEditor({
       if (dragging === 'move') {
         c.x = clamp(c.x + dx, 0, imageWidth - c.width);
         c.y = clamp(c.y + dy, 0, imageHeight - c.height);
+      } else if (aspectRatio) {
+        const base = dragStart.crop;
+        if (dragging === 'se') {
+          let w = Math.max(30, base.width + dx);
+          let h = w / aspectRatio;
+          if (base.x + w > imageWidth) {
+            w = imageWidth - base.x;
+            h = w / aspectRatio;
+          }
+          if (base.y + h > imageHeight) {
+            h = imageHeight - base.y;
+            w = h * aspectRatio;
+          }
+          c.width = w;
+          c.height = h;
+        } else if (dragging === 'nw') {
+          let w = Math.max(30, base.width - dx);
+          let h = w / aspectRatio;
+          if (base.x + base.width - w < 0) {
+            w = base.x + base.width;
+            h = w / aspectRatio;
+          }
+          if (base.y + base.height - h < 0) {
+            h = base.y + base.height;
+            w = h * aspectRatio;
+          }
+          c.x = base.x + base.width - w;
+          c.y = base.y + base.height - h;
+          c.width = w;
+          c.height = h;
+        } else if (dragging === 'ne') {
+          let w = Math.max(30, base.width + dx);
+          let h = w / aspectRatio;
+          if (base.x + w > imageWidth) {
+            w = imageWidth - base.x;
+            h = w / aspectRatio;
+          }
+          if (base.y + base.height - h < 0) {
+            h = base.y + base.height;
+            w = h * aspectRatio;
+          }
+          c.y = base.y + base.height - h;
+          c.width = w;
+          c.height = h;
+        } else if (dragging === 'sw') {
+          let w = Math.max(30, base.width - dx);
+          let h = w / aspectRatio;
+          if (base.x + base.width - w < 0) {
+            w = base.x + base.width;
+            h = w / aspectRatio;
+          }
+          if (base.y + h > imageHeight) {
+            h = imageHeight - base.y;
+            w = h * aspectRatio;
+          }
+          c.x = base.x + base.width - w;
+          c.width = w;
+          c.height = h;
+        } else if (dragging === 'e' || dragging === 'w') {
+          const delta = dragging === 'e' ? dx : -dx;
+          let w = clamp(base.width + delta, 30, dragging === 'e' ? imageWidth - base.x : base.x + base.width);
+          let h = w / aspectRatio;
+          if (h > imageHeight) {
+            h = imageHeight;
+            w = h * aspectRatio;
+          }
+          let newY = clamp(base.y + (base.height - h) / 2, 0, imageHeight - h);
+          c.y = newY;
+          c.height = h;
+          c.width = w;
+          if (dragging === 'w') {
+            c.x = base.x + base.width - w;
+          }
+        } else if (dragging === 'n' || dragging === 's') {
+          const delta = dragging === 's' ? dy : -dy;
+          let h = clamp(base.height + delta, 40, dragging === 's' ? imageHeight - base.y : base.y + base.height);
+          let w = h * aspectRatio;
+          if (w > imageWidth) {
+            w = imageWidth;
+            h = w / aspectRatio;
+          }
+          let newX = clamp(base.x + (base.width - w) / 2, 0, imageWidth - w);
+          c.x = newX;
+          c.width = w;
+          c.height = h;
+          if (dragging === 'n') {
+            c.y = base.y + base.height - h;
+          }
+        }
       } else {
-        // Handle resize
+        // Freeform resize
         if (dragging.includes('w')) {
           const newX = clamp(c.x + dx, 0, c.x + c.width - 20);
           c.width = c.width - (newX - c.x);
@@ -114,7 +207,7 @@ export default function CropEditor({
         height: Math.round(c.height),
       });
     },
-    [dragging, dragStart, scaleX, scaleY, imageWidth, imageHeight, onChange]
+    [dragging, dragStart, scaleX, scaleY, imageWidth, imageHeight, onChange, aspectRatio]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -179,6 +272,24 @@ export default function CropEditor({
             />
           </svg>
 
+          {/* Face Detection Box (if present) */}
+          {faceBox && (
+            <div
+              className="absolute border border-dashed border-emerald-400 pointer-events-none z-10 rounded-sm"
+              style={{
+                left: faceBox.x * scaleX,
+                top: faceBox.y * scaleY,
+                width: faceBox.width * scaleX,
+                height: faceBox.height * scaleY,
+                boxShadow: '0 0 10px rgba(52, 211, 153, 0.35)',
+              }}
+            >
+              <span className="absolute -top-4 left-0 bg-emerald-500 text-black text-[9px] font-bold px-1 py-0.5 rounded-sm tracking-wide">
+                FACE
+              </span>
+            </div>
+          )}
+
           {/* Crop rectangle */}
           <div
             className={`absolute border-2 border-[var(--color-accent-primary)] ${
@@ -236,9 +347,16 @@ export default function CropEditor({
       {/* Coordinate info */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3 rounded-lg bg-[var(--color-surface-tertiary)] border border-[var(--color-border-subtle)]">
-          <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] mb-2 font-semibold">
-            Pixel Coordinates
-          </p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--color-text-muted)] font-semibold">
+              Pixel Coordinates
+            </p>
+            {aspectRatio && (
+              <span className="text-[10px] bg-[var(--color-accent-primary)]/15 text-[var(--color-accent-secondary)] px-1.5 py-0.5 rounded font-mono font-medium">
+                3:4 Portrait Lock
+              </span>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono">
             <span className="text-[var(--color-text-muted)]">X:</span>
             <span className="text-[var(--color-text-primary)]">{crop.x}</span>

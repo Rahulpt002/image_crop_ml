@@ -26,10 +26,15 @@ async def start_training(
     if stats.labeled == 0:
         raise HTTPException(status_code=400, detail="No labeled examples in dataset")
     if stats.train == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="No training examples assigned. Run dataset split first."
-        )
+        # Auto-assign splits if examples are unassigned
+        from backend.services.dataset_service import assign_splits
+        assign_splits(db)
+        stats = get_dataset_stats(db)
+        if stats.train == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Not enough labeled examples to form a training split."
+            )
 
     try:
         version = training_orchestrator.start_training(config, SessionLocal)

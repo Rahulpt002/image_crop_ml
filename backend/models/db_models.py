@@ -171,5 +171,13 @@ class Prediction(Base):
     added_to_dataset = Column(Integer, default=0)
     training_example_id = Column(String, ForeignKey("training_examples.id"), nullable=True)
 
+    # Face detection info
+    face_detected = Column(Integer, default=0)
+    face_box_x = Column(Integer, nullable=True)
+    face_box_y = Column(Integer, nullable=True)
+    face_box_width = Column(Integer, nullable=True)
+    face_box_height = Column(Integer, nullable=True)
+    face_confidence = Column(Float, nullable=True)
+
     # Export path
     export_path = Column(String, nullable=True)

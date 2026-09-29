@@ -138,6 +138,13 @@ export interface PredictionResponse {
   pred_crop_y: number | null;
   pred_crop_width: number | null;
   pred_crop_height: number | null;
+  face_detected?: boolean;
+  face_box_x?: number | null;
+  face_box_y?: number | null;
+  face_box_width?: number | null;
+  face_box_height?: number | null;
+  face_confidence?: number | null;
+  aspect_ratio?: number | null;
 }
 
 export interface HealthCheck {

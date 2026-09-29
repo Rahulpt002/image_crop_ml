@@ -87,13 +87,43 @@ export default function CropPage() {
     img.src = preview;
   }, [preview, crop]);
 
-  const handleDownload = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const link = document.createElement('a');
-    link.download = `cropped_${file?.name || 'image'}.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.95);
-    link.click();
+  const [exporting, setExporting] = useState(false);
+
+  const fallbackCanvasDownload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 150;
+    canvas.height = 200;
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !preview) return;
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, crop.x, crop.y, crop.width, crop.height, 0, 0, 150, 200);
+      const link = document.createElement('a');
+      link.download = `portrait_150x200_${file?.name || 'image'}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+    };
+    img.src = preview;
+  };
+
+  const handleDownload = async () => {
+    if (prediction) {
+      setExporting(true);
+      try {
+        const res = await api.model.export(prediction.id, crop);
+        const link = document.createElement('a');
+        link.download = res.filename || `portrait_150x200_${file?.name || 'crop'}.jpg`;
+        link.href = `/exports/${res.filename}`;
+        link.click();
+      } catch (err) {
+        console.warn('Backend export failed, falling back to canvas download:', err);
+        fallbackCanvasDownload();
+      } finally {
+        setExporting(false);
+      }
+    } else {
+      fallbackCanvasDownload();
+    }
   };
 
   const handleSaveCorrection = async () => {
@@ -120,10 +150,10 @@ export default function CropPage() {
           <div className="p-2 rounded-xl bg-gradient-to-br from-[var(--color-accent-primary)] to-purple-500">
             <Scissors className="w-5 h-5 text-white" />
           </div>
-          AI Crop
+          AI Portrait Crop
         </h1>
         <p className="text-sm text-[var(--color-text-secondary)] mt-2">
-          Upload an image and let the AI predict your preferred crop.
+          Upload a portrait photo to detect face/head, frame in 3:4 aspect ratio, and export at 150 × 200 px (300 DPI).
         </p>
       </div>
 
@@ -139,14 +169,22 @@ export default function CropPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left: Original with crop overlay */}
           <div className="space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-              Original — Adjust Crop
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                Original — 3:4 Crop Framing
+              </p>
+              {prediction?.face_detected && (
+                <span className="text-xs text-emerald-400 flex items-center gap-1 font-medium bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Face Localized
+                </span>
+              )}
+            </div>
 
             {loading ? (
               <div className="flex flex-col items-center justify-center h-80 rounded-xl bg-[var(--color-surface-card)] border border-[var(--color-border-subtle)]">
                 <Loader2 className="w-8 h-8 animate-spin text-[var(--color-accent-primary)] mb-3" />
-                <p className="text-sm text-[var(--color-text-muted)]">AI is analyzing your image...</p>
+                <p className="text-sm text-[var(--color-text-muted)]">AI is analyzing face and learned portrait framing...</p>
               </div>
             ) : dims ? (
               <CropEditor
@@ -155,6 +193,17 @@ export default function CropPage() {
                 imageHeight={dims.h}
                 crop={crop}
                 onChange={setCrop}
+                aspectRatio={0.75}
+                faceBox={
+                  prediction?.face_detected && prediction.face_box_x !== null
+                    ? {
+                        x: prediction.face_box_x!,
+                        y: prediction.face_box_y!,
+                        width: prediction.face_box_width!,
+                        height: prediction.face_box_height!,
+                      }
+                    : null
+                }
               />
             ) : null}
 
@@ -163,7 +212,7 @@ export default function CropPage() {
                 <AlertTriangle className="w-4 h-4 text-[var(--color-warning)]" />
                 <p className="text-xs text-[var(--color-warning)]">
                   {error.includes('No active model')
-                    ? 'No trained model available. Showing manual crop mode.'
+                    ? 'No trained model available. Showing manual 3:4 crop mode.'
                     : error}
                 </p>
               </div>
@@ -172,18 +221,26 @@ export default function CropPage() {
 
           {/* Right: Result */}
           <div className="space-y-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-              {prediction ? 'AI Crop Result' : 'Crop Preview'}
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+                {prediction ? 'AI Crop Result' : 'Crop Preview'}
+              </p>
+              <span className="text-xs font-mono font-medium text-[var(--color-accent-secondary)] bg-[var(--color-accent-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-accent-primary)]/20">
+                150 × 200 px · 300 DPI
+              </span>
+            </div>
 
             <div className="rounded-xl overflow-hidden border border-[var(--color-border-subtle)] bg-black/30 flex items-center justify-center min-h-[200px]">
               <canvas ref={canvasRef} className="max-w-full max-h-[500px]" />
             </div>
 
             {prediction && (
-              <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent-secondary)]" />
-                <span>Predicted by model {prediction.model_version}</span>
+              <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--color-accent-secondary)]" />
+                  <span>Predicted by model {prediction.model_version}</span>
+                </div>
+                <span>Aspect Ratio: 3:4 (0.75)</span>
               </div>
             )}
 
@@ -195,24 +252,40 @@ export default function CropPage() {
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--color-accent-primary)]/10 text-[var(--color-accent-secondary)] text-sm font-medium hover:bg-[var(--color-accent-primary)]/20 transition-colors"
                 >
                   <Sparkles className="w-4 h-4" />
-                  AI Crop
+                  Reset to AI
                 </button>
               )}
               <button
                 onClick={() => {
-                  if (dims) setCrop({ x: 0, y: 0, width: dims.w, height: dims.h });
+                  if (dims) {
+                    // Reset to centered 3:4 crop
+                    const targetAr = 0.75;
+                    const w = Math.min(dims.w, dims.h * targetAr);
+                    const h = w / targetAr;
+                    setCrop({
+                      x: Math.round((dims.w - w) / 2),
+                      y: Math.round((dims.h - h) / 2),
+                      width: Math.round(w),
+                      height: Math.round(h),
+                    });
+                  }
                 }}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] text-sm font-medium hover:bg-[var(--color-surface-hover)] transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
-                Reset
+                Reset Frame
               </button>
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[var(--color-accent-primary)] to-purple-500 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-[var(--color-accent-primary)] to-purple-500 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
               >
-                <Download className="w-4 h-4" />
-                Download
+                {exporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Export 150×200 (300 DPI)
               </button>
             </div>
 

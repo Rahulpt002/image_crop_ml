@@ -151,7 +151,10 @@ class CropNet(nn.Module):
         return crop
 
     def predict_with_validation(
-        self, x: torch.Tensor, aspect_ratio: float | None = None,
+        self,
+        x: torch.Tensor,
+        aspect_ratio: float | None = None,
+        image_aspect_ratio: float | None = None,
     ) -> torch.Tensor:
         """
         Predict with post-processing to ensure valid crop boxes.
@@ -161,6 +164,8 @@ class CropNet(nn.Module):
             y + height ≤ 1
         
         If aspect_ratio is provided, constrains the crop to that ratio (w/h).
+        If image_aspect_ratio (image_width / image_height) is provided,
+        converts the physical target aspect ratio to normalized coordinates.
         """
         crop = self.forward(x)
         
@@ -176,7 +181,11 @@ class CropNet(nn.Module):
         result = torch.stack([x_coord, y_coord, width, height], dim=1)
 
         if aspect_ratio is not None:
-            result = constrain_to_aspect_ratio(result, aspect_ratio)
+            result = constrain_to_aspect_ratio(
+                result,
+                aspect_ratio=aspect_ratio,
+                image_aspect_ratio=image_aspect_ratio,
+            )
 
         return result
 
@@ -184,6 +193,7 @@ class CropNet(nn.Module):
 def constrain_to_aspect_ratio(
     pred: torch.Tensor,
     aspect_ratio: float = 0.75,
+    image_aspect_ratio: float | None = None,
 ) -> torch.Tensor:
     """
     Constrain predicted crop boxes to a target aspect ratio.
@@ -194,19 +204,23 @@ def constrain_to_aspect_ratio(
 
     Args:
         pred: Tensor [B, 4] with (x, y, width, height) in [0, 1]
-        aspect_ratio: Target width/height ratio (default 0.75 = 3:4)
+        aspect_ratio: Target physical crop width/height ratio (default 0.75 = 3:4)
+        image_aspect_ratio: Optional original image width/height ratio.
+            If provided, effective normalized AR = aspect_ratio / image_aspect_ratio.
 
     Returns:
         Tensor [B, 4] with constrained crop boxes
     """
+    effective_ar = aspect_ratio if image_aspect_ratio is None else (aspect_ratio / image_aspect_ratio)
+
     x = pred[:, 0]
     y = pred[:, 1]
     w = pred[:, 2]
     h = pred[:, 3]
 
     # Two options: shrink width to match height, or shrink height to match width
-    w_from_h = h * aspect_ratio       # width if we keep height
-    h_from_w = w / aspect_ratio       # height if we keep width
+    w_from_h = h * effective_ar       # width if we keep height
+    h_from_w = w / effective_ar       # height if we keep width
 
     # Pick the option that produces a smaller (safer) crop
     use_height_based = w_from_h <= w   # can shrink width to fit?
