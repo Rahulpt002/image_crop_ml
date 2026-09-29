@@ -44,6 +44,13 @@ DEFAULT_VAL_SPLIT = 0.1
 DEFAULT_TEST_SPLIT = 0.1
 SPLIT_RANDOM_SEED = 42
 
+# Portrait crop output
+PORTRAIT_ASPECT_RATIO = 3 / 4          # width / height = 0.75
+PORTRAIT_OUTPUT_WIDTH = 150            # px
+PORTRAIT_OUTPUT_HEIGHT = 200           # px
+PORTRAIT_OUTPUT_DPI = (300, 300)       # metadata only
+ASPECT_RATIO_TOLERANCE = 0.03         # ±3% tolerance for validation
+
 # Server
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8001"))

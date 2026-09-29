@@ -30,10 +30,11 @@ export const api = {
   // ─── Dataset ───────────────────────────────────────────────────────
 
   dataset: {
-    list: (skip = 0, limit = 50, split?: string, status?: string) => {
+    list: (skip = 0, limit = 50, split?: string, status?: string, batchId?: string) => {
       const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
       if (split) params.set('split', split);
       if (status) params.set('status', status);
+      if (batchId) params.set('batch_id', batchId);
       return request<DatasetResponse>(`/api/dataset?${params}`);
     },
 
@@ -41,15 +42,24 @@ export const api = {
 
     get: (id: string) => request<TrainingExample>(`/api/dataset/${id}`),
 
-    upload: (original: File, target?: File) => {
+    upload: (original: File, target?: File, batchId?: string, skipDuplicates = true) => {
       const form = new FormData();
       form.append('original', original);
       if (target) form.append('target', target);
+      if (batchId) form.append('batch_id', batchId);
+      form.append('skip_duplicates', String(skipDuplicates));
       return request<TrainingExample>('/api/dataset/upload', {
         method: 'POST',
         body: form,
       });
     },
+
+    checkHashes: (hashes: string[]) =>
+      request<{ duplicates: string[]; count: number }>('/api/dataset/check-hashes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(hashes),
+      }),
 
     update: (id: string, data: Partial<TrainingExample>) =>
       request<TrainingExample>(`/api/dataset/${id}`, {

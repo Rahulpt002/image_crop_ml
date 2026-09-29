@@ -98,7 +98,12 @@ async def predict_crop(
     # Run inference
     try:
         from ml.inference import predict_crop as ml_predict
-        pred = ml_predict(str(path), active_model.model_path, active_model.image_size)
+        pred = ml_predict(
+            str(path),
+            active_model.model_path,
+            active_model.image_size,
+            backbone=active_model.backbone,
+        )
     except Exception as e:
         logger.exception(f"Prediction failed: {e}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {e}")

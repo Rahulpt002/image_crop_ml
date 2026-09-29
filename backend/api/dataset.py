@@ -1,5 +1,6 @@
 """Dataset API routes."""
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -28,19 +29,95 @@ router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 crop_extractor = CropLabelExtractor()
 
 
+def _compute_file_hash(content: bytes) -> str:
+    """Compute SHA-256 hash of file content."""
+    return hashlib.sha256(content).hexdigest()
+
+
+def _compute_pair_hash(orig_content: bytes, tgt_content: bytes | None) -> str:
+    """Compute a combined hash for an original+target pair."""
+    h = hashlib.sha256(orig_content)
+    if tgt_content:
+        h.update(tgt_content)
+    return h.hexdigest()
+
+
+@router.post("/check-hash")
+async def check_hash(
+    file_hash: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Check if a file hash already exists in the dataset (for duplicate detection)."""
+    existing = (
+        db.query(TrainingExample)
+        .filter(TrainingExample.file_hash == file_hash)
+        .first()
+    )
+    return {
+        "exists": existing is not None,
+        "example_id": existing.id if existing else None,
+    }
+
+
+@router.post("/check-hashes")
+async def check_hashes_batch(
+    hashes: List[str],
+    db: Session = Depends(get_db),
+):
+    """Check multiple file hashes at once for batch duplicate detection."""
+    existing = (
+        db.query(TrainingExample.file_hash)
+        .filter(TrainingExample.file_hash.in_(hashes))
+        .all()
+    )
+    existing_set = {row[0] for row in existing}
+    return {
+        "duplicates": list(existing_set),
+        "count": len(existing_set),
+    }
+
+
 @router.post("/upload", response_model=TrainingExampleResponse)
 async def upload_training_pair(
     original: UploadFile = File(...),
     target: UploadFile = File(None),
+    batch_id: str = Form(None),
+    skip_duplicates: bool = Form(True),
     db: Session = Depends(get_db),
 ):
     """
     Upload an original image and optionally a target crop image.
     If target is provided, attempts automatic crop label extraction.
+
+    Args:
+        original: The original full image
+        target: The manually cropped target image
+        batch_id: Optional batch ID to group imports
+        skip_duplicates: If True, skip if the pair hash already exists
     """
-    # Validate & save original
+    # Validate & read files
     orig_content = await original.read()
     validate_image_file(original.filename, len(orig_content))
+
+    tgt_content = None
+    if target:
+        tgt_content = await target.read()
+        validate_image_file(target.filename, len(tgt_content))
+
+    # Compute pair hash for duplicate detection
+    pair_hash = _compute_pair_hash(orig_content, tgt_content)
+
+    # Check for duplicates
+    if skip_duplicates:
+        existing = (
+            db.query(TrainingExample)
+            .filter(TrainingExample.file_hash == pair_hash)
+            .first()
+        )
+        if existing:
+            return existing  # Return the existing example
+
+    # Save original
     orig_name, orig_path, orig_w, orig_h = save_uploaded_image(
         orig_content, original.filename, subfolder="originals"
     )
@@ -52,12 +129,12 @@ async def upload_training_pair(
         original_width=orig_w,
         original_height=orig_h,
         status="pending",
+        batch_id=batch_id,
+        file_hash=pair_hash,
     )
 
     # Process target if provided
-    if target:
-        tgt_content = await target.read()
-        validate_image_file(target.filename, len(tgt_content))
+    if target and tgt_content:
         tgt_name, tgt_path, tgt_w, tgt_h = save_uploaded_image(
             tgt_content, target.filename, subfolder="targets"
         )
@@ -104,6 +181,7 @@ async def get_dataset(
     limit: int = 50,
     split: Optional[str] = None,
     status: Optional[str] = None,
+    batch_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Get dataset examples with pagination and filtering."""
@@ -113,14 +191,26 @@ async def get_dataset(
         query = query.filter(TrainingExample.split == split)
     if status:
         query = query.filter(TrainingExample.status == status)
+    if batch_id:
+        query = query.filter(TrainingExample.batch_id == batch_id)
 
     total = query.count()
     examples = query.order_by(TrainingExample.created_at.desc()).offset(skip).limit(limit).all()
+
+    # Get distinct batch IDs for filtering
+    batches = (
+        db.query(TrainingExample.batch_id)
+        .filter(TrainingExample.batch_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    batch_ids = sorted([b[0] for b in batches], reverse=True)
 
     return {
         "total": total,
         "examples": [TrainingExampleResponse.model_validate(e) for e in examples],
         "stats": get_dataset_stats(db).model_dump(),
+        "batch_ids": batch_ids,
     }
 
 

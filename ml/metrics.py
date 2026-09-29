@@ -2,7 +2,6 @@
 
 from typing import List, Dict
 
-import torch
 import numpy as np
 
 

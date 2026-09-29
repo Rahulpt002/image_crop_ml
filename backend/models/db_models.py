@@ -57,6 +57,10 @@ class TrainingExample(Base):
     # Status
     status = Column(String, default="pending")  # pending | labeled | error
 
+    # Batch import tracking
+    batch_id = Column(String, nullable=True, index=True)
+    file_hash = Column(String, nullable=True, index=True)  # SHA-256 of original+target
+
     # Optional notes
     notes = Column(Text, nullable=True)
 

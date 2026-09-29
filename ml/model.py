@@ -150,13 +150,17 @@ class CropNet(nn.Module):
         crop = self.head(pooled)
         return crop
 
-    def predict_with_validation(self, x: torch.Tensor) -> torch.Tensor:
+    def predict_with_validation(
+        self, x: torch.Tensor, aspect_ratio: float | None = None,
+    ) -> torch.Tensor:
         """
         Predict with post-processing to ensure valid crop boxes.
         
         Ensures:
             x + width ≤ 1
             y + height ≤ 1
+        
+        If aspect_ratio is provided, constrains the crop to that ratio (w/h).
         """
         crop = self.forward(x)
         
@@ -169,7 +173,64 @@ class CropNet(nn.Module):
         width = torch.clamp(width, max=1.0 - x_coord)
         height = torch.clamp(height, max=1.0 - y_coord)
 
-        return torch.stack([x_coord, y_coord, width, height], dim=1)
+        result = torch.stack([x_coord, y_coord, width, height], dim=1)
+
+        if aspect_ratio is not None:
+            result = constrain_to_aspect_ratio(result, aspect_ratio)
+
+        return result
+
+
+def constrain_to_aspect_ratio(
+    pred: torch.Tensor,
+    aspect_ratio: float = 0.75,
+) -> torch.Tensor:
+    """
+    Constrain predicted crop boxes to a target aspect ratio.
+
+    Adjusts the crop dimensions so that width/height == aspect_ratio,
+    re-centering within the original predicted area while keeping
+    the box inside [0, 1].
+
+    Args:
+        pred: Tensor [B, 4] with (x, y, width, height) in [0, 1]
+        aspect_ratio: Target width/height ratio (default 0.75 = 3:4)
+
+    Returns:
+        Tensor [B, 4] with constrained crop boxes
+    """
+    x = pred[:, 0]
+    y = pred[:, 1]
+    w = pred[:, 2]
+    h = pred[:, 3]
+
+    # Two options: shrink width to match height, or shrink height to match width
+    w_from_h = h * aspect_ratio       # width if we keep height
+    h_from_w = w / aspect_ratio       # height if we keep width
+
+    # Pick the option that produces a smaller (safer) crop
+    use_height_based = w_from_h <= w   # can shrink width to fit?
+
+    new_w = torch.where(use_height_based, w_from_h, w)
+    new_h = torch.where(use_height_based, h, h_from_w)
+
+    # Re-center relative to original crop center
+    cx = x + w / 2
+    cy = y + h / 2
+    new_x = cx - new_w / 2
+    new_y = cy - new_h / 2
+
+    # Clamp to [0, 1] bounds
+    new_x = torch.clamp(new_x, min=0.0)
+    new_y = torch.clamp(new_y, min=0.0)
+    new_x = torch.clamp(new_x, max=1.0 - new_w)
+    new_y = torch.clamp(new_y, max=1.0 - new_h)
+
+    # Safety: ensure w and h are positive
+    new_w = torch.clamp(new_w, min=0.01)
+    new_h = torch.clamp(new_h, min=0.01)
+
+    return torch.stack([new_x, new_y, new_w, new_h], dim=1)
 
 
 def get_device() -> torch.device:
@@ -185,3 +246,4 @@ def get_device() -> torch.device:
 def build_model(backbone: str = "mobilenet_v3_small", pretrained: bool = True) -> CropNet:
     """Factory function to build a CropNet model."""
     return CropNet(backbone_name=backbone, pretrained=pretrained)
+

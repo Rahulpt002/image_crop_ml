@@ -103,6 +103,8 @@ class TrainingExampleResponse(BaseModel):
     confidence: Optional[float] = None
     split: str = "unassigned"
     status: str = "pending"
+    batch_id: Optional[str] = None
+    file_hash: Optional[str] = None
     notes: Optional[str] = None
 
     class Config:

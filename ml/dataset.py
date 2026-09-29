@@ -7,16 +7,19 @@ import torch
 from torch.utils.data import Dataset
 from PIL import Image
 
-from ml.preprocessing import AspectRatioResize, get_train_transform, get_val_transform
+from ml.preprocessing import AspectRatioResize, get_train_transform, get_val_transform, load_image
 
 
 class CropDataset(Dataset):
     """
     Dataset for crop prediction.
-    
+
     Each sample is:
         - An image (resized with aspect-ratio preservation + padding)
         - A crop label [x, y, width, height] (normalized 0–1)
+
+    IMPORTANT: Crop labels are normalized relative to the ORIGINAL image
+    dimensions. The model learns: padded_image → original_normalized_coords.
     """
 
     def __init__(
@@ -44,8 +47,8 @@ class CropDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         example = self.examples[idx]
 
-        # Load image
-        img = Image.open(example["original_path"]).convert("RGB")
+        # Load image with EXIF correction (consistent with upload + inference)
+        img = load_image(example["original_path"])
 
         # Resize with aspect ratio preservation
         padded_img, metadata = self.resizer(img)

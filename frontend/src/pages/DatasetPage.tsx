@@ -19,12 +19,16 @@ export default function DatasetPage() {
   const [selectedExample, setSelectedExample] = useState<TrainingExample | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [batchFilter, setBatchFilter] = useState<string>('all');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const splitParam = filter !== 'all' ? filter : undefined;
-      const resp = await api.dataset.list(0, 100, splitParam);
+      const statusParam = statusFilter !== 'all' ? statusFilter : undefined;
+      const batchParam = batchFilter !== 'all' ? batchFilter : undefined;
+      const resp = await api.dataset.list(0, 100, splitParam, statusParam, batchParam);
       setData(resp);
       setError(null);
     } catch (e: any) {
@@ -32,7 +36,7 @@ export default function DatasetPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, statusFilter, batchFilter]);
 
   useEffect(() => {
     loadData();
@@ -133,6 +137,40 @@ export default function DatasetPage() {
         ))}
       </div>
 
+      {/* Status + Batch filters */}
+      <div className="flex gap-4 mb-6 flex-wrap">
+        {/* Status filter */}
+        <div className="flex gap-1 p-1 rounded-lg bg-[var(--color-surface-secondary)] w-fit">
+          {['all', 'labeled', 'pending'].map((f) => (
+            <button
+              key={f}
+              onClick={() => setStatusFilter(f)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                statusFilter === f
+                  ? 'bg-[var(--color-accent-primary)] text-white'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+              }`}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Batch filter */}
+        {data?.batch_ids && data.batch_ids.length > 0 && (
+          <select
+            value={batchFilter}
+            onChange={(e) => setBatchFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-surface-secondary)] border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] cursor-pointer"
+          >
+            <option value="all">All Batches</option>
+            {data.batch_ids.map((b) => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
       {error && (
         <div className="mb-6 p-4 rounded-xl border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/5 flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-[var(--color-danger)]" />
@@ -199,6 +237,11 @@ export default function DatasetPage() {
                   {ex.confidence !== null && (
                     <span>
                       Conf: {(ex.confidence * 100).toFixed(0)}%
+                    </span>
+                  )}
+                  {ex.batch_id && (
+                    <span className="text-[var(--color-accent-secondary)]">
+                      {ex.batch_id}
                     </span>
                   )}
                 </div>

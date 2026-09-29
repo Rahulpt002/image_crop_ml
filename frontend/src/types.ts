@@ -38,6 +38,8 @@ export interface TrainingExample {
   confidence: number | null;
   split: string;
   status: string;
+  batch_id: string | null;
+  file_hash: string | null;
   notes: string | null;
 }
 
@@ -55,6 +57,7 @@ export interface DatasetResponse {
   total: number;
   examples: TrainingExample[];
   stats: DatasetStats;
+  batch_ids: string[];
 }
 
 export interface TrainingConfig {
@@ -141,4 +144,17 @@ export interface HealthCheck {
   status: string;
   device: string;
   version: string;
+}
+
+/** Batch upload types */
+export type PairStatus = 'matched' | 'missing_target' | 'missing_original' | 'duplicate' | 'invalid';
+
+export interface FilePair {
+  stem: string;
+  original: File | null;
+  target: File | null;
+  status: PairStatus;
+  uploadStatus: 'pending' | 'uploading' | 'success' | 'failed' | 'skipped';
+  error?: string;
+  result?: TrainingExample;
 }

@@ -15,6 +15,7 @@ from backend.schemas.api_schemas import TrainingConfig
 from ml.model import CropNet, build_model, get_device
 from ml.dataset import CropDataset, build_dataloaders
 from ml.metrics import evaluate_predictions
+from ml.preprocessing import get_preprocessing_config
 
 logger = logging.getLogger(__name__)
 
@@ -167,10 +168,10 @@ def run_training_job(
             run.mae_width = metrics["mae_width"]
             run.mae_height = metrics["mae_height"]
 
-        # Save config and metrics
         config_data = config.model_dump()
         config_data["device"] = str(device)
         config_data["version"] = version
+        config_data["preprocessing"] = get_preprocessing_config(config.image_size)
         (version_dir / "config.json").write_text(json.dumps(config_data, indent=2))
 
         if val_examples:
